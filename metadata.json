@@ -1,0 +1,6 @@
+{
+  "name": "Personal Portfolio & Creative Showcase",
+  "description": "Clean, interactive portfolio featuring a filterable project gallery, professional experience timeline, blog section, and contact form.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
