@@ -3,6 +3,10 @@ import { createServer as createViteServer } from 'vite';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import dotenv from 'dotenv';
+import { exec } from 'child_process';
+import { promisify } from 'util';
+
+const execAsync = promisify(exec);
 
 dotenv.config();
 
@@ -200,6 +204,69 @@ async function startServer() {
       const response = await fetch(`https://api.github.com/users/${encodeURIComponent(username)}/repos?sort=updated&per_page=30`, { headers });
       const data = await response.json();
       return res.status(response.status).json(data);
+    } catch (err: any) {
+      return res.status(500).json({ error: err.message });
+    }
+  });
+
+  // 4. Git Push to GitHub Repo endpoint
+  app.post('/api/git/push', async (req, res) => {
+    try {
+      const { token, commitMessage } = req.body;
+      if (!token || typeof token !== 'string') {
+        return res.status(400).json({ 
+          error: 'GitHub Personal Access Token is required to push to github.com/ranjithjunnu09/Ranjith_Portfolio.' 
+        });
+      }
+
+      const cleanToken = token.trim();
+      const repoUrl = `https://x-access-token:${cleanToken}@github.com/ranjithjunnu09/Ranjith_Portfolio.git`;
+      const msg = (commitMessage || 'feat: update portfolio with latest projects, certifications and blog').replace(/["`$\\]/g, '');
+
+      // Ensure git identity
+      await execAsync('git config user.name "ranjithjunnu09" && git config user.email "angidivijaykumar21@gmail.com"');
+
+      // Add all changes and commit if any untracked or modified
+      await execAsync('git add .');
+      try {
+        await execAsync(`git commit -m "${msg}"`);
+      } catch (commitErr: any) {
+        // Nothing to commit is okay
+      }
+
+      // Ensure branch main
+      await execAsync('git branch -M main');
+
+      // Execute push to GitHub repository
+      const { stdout, stderr } = await execAsync(`git push "${repoUrl}" main:main --force`);
+
+      return res.json({
+        success: true,
+        message: 'Successfully pushed all portfolio code to https://github.com/ranjithjunnu09/Ranjith_Portfolio!',
+        output: (stdout || stderr || 'Pushed successfully').toString().replace(/x-access-token:[^@]+@/g, '***@')
+      });
+    } catch (err: any) {
+      console.error('Git push error:', err);
+      let errorMsg = err.message || 'Failed to push to GitHub repository';
+      if (typeof errorMsg === 'string') {
+        errorMsg = errorMsg.replace(/x-access-token:[^@]+@/g, '***@');
+      }
+      return res.status(500).json({ error: errorMsg });
+    }
+  });
+
+  // 5. Git Status endpoint to check repo state
+  app.get('/api/git/status', async (_req, res) => {
+    try {
+      const { stdout: statusOut } = await execAsync('git status --short');
+      const { stdout: logOut } = await execAsync('git log -1 --pretty=format:"%h - %s (%cd)" --date=relative');
+      const { stdout: branchOut } = await execAsync('git branch --show-current');
+      return res.json({
+        status: statusOut.trim() || 'Working tree clean',
+        lastCommit: logOut.trim(),
+        branch: branchOut.trim() || 'main',
+        repoUrl: 'https://github.com/ranjithjunnu09/Ranjith_Portfolio.git'
+      });
     } catch (err: any) {
       return res.status(500).json({ error: err.message });
     }
