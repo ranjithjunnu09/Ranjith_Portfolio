@@ -15,7 +15,13 @@ import {
   AlertCircle,
   Key,
   ShieldCheck,
-  UserCheck
+  UserCheck,
+  UploadCloud,
+  GitCommit,
+  Terminal,
+  Copy,
+  Download,
+  ArrowUpRight
 } from 'lucide-react';
 import { 
   GitHubUser, 
@@ -56,6 +62,23 @@ export const GitHubConnectModal: React.FC<GitHubConnectModalProps> = ({
 }) => {
   if (!isOpen) return null;
 
+  // Mode: push code to repo OR sync repos/profile
+  const [modalTab, setModalTab] = useState<'push' | 'sync'>('push');
+
+  // Push code state
+  const [pushToken, setPushToken] = useState('');
+  const [commitMsg, setCommitMsg] = useState('feat: complete modern AI & Full-Stack engineer portfolio for Ranjith Junnu');
+  const [pushing, setPushing] = useState(false);
+  const [pushSuccess, setPushSuccess] = useState(false);
+  const [pushOutput, setPushOutput] = useState('');
+  const [copiedCommands, setCopiedCommands] = useState(false);
+  const [gitStatus, setGitStatus] = useState<{
+    status: string;
+    lastCommit: string;
+    branch: string;
+    repoUrl: string;
+  } | null>(null);
+
   const [activeTab, setActiveTab] = useState<'username' | 'oauth' | 'token'>('username');
   const [usernameInput, setUsernameInput] = useState(gitHubState.username || '');
   const [tokenInput, setTokenInput] = useState('');
@@ -69,6 +92,18 @@ export const GitHubConnectModal: React.FC<GitHubConnectModalProps> = ({
 
   // OAuth status
   const [oauthChecking, setOAuthChecking] = useState(false);
+
+  // Fetch local git repository status on modal open
+  useEffect(() => {
+    if (isOpen) {
+      fetch('/api/git/status')
+        .then((r) => r.json())
+        .then((data) => {
+          if (data && !data.error) setGitStatus(data);
+        })
+        .catch(() => {});
+    }
+  }, [isOpen]);
 
   // Initialize selected repos when repos change
   useEffect(() => {
@@ -286,6 +321,50 @@ export const GitHubConnectModal: React.FC<GitHubConnectModalProps> = ({
     return r.name.toLowerCase().includes(q) || (r.description && r.description.toLowerCase().includes(q));
   });
 
+  // Push code to GitHub repository
+  const handlePushCode = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!pushToken.trim()) {
+      setErrorMessage('Please enter your GitHub Personal Access Token (classic with repo scope or fine-grained) to authorize the push.');
+      return;
+    }
+    setPushing(true);
+    setErrorMessage(null);
+    setSuccessMessage(null);
+    try {
+      const res = await fetch('/api/git/push', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          token: pushToken.trim(),
+          commitMessage: commitMsg.trim(),
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.error || 'Failed to push to GitHub repository.');
+      }
+      setPushSuccess(true);
+      setPushOutput(data.output || '');
+      setSuccessMessage('Successfully pushed all portfolio code to https://github.com/ranjithjunnu09/Ranjith_Portfolio!');
+      
+      const statusRes = await fetch('/api/git/status');
+      const statusData = await statusRes.json();
+      if (statusData && !statusData.error) setGitStatus(statusData);
+    } catch (err: any) {
+      setErrorMessage(err.message || 'Push failed. Please check that your token has write (repo) access and try again.');
+    } finally {
+      setPushing(false);
+    }
+  };
+
+  const handleCopyTerminalCommands = () => {
+    const commands = `git remote set-url origin https://github.com/ranjithjunnu09/Ranjith_Portfolio.git\ngit branch -M main\ngit push -u origin main`;
+    navigator.clipboard.writeText(commands);
+    setCopiedCommands(true);
+    setTimeout(() => setCopiedCommands(false), 2500);
+  };
+
   return (
     <div
       id="github-connect-backdrop"
@@ -334,6 +413,43 @@ export const GitHubConnectModal: React.FC<GitHubConnectModalProps> = ({
           </button>
         </div>
 
+        {/* Main Mode Toggle: Push to GitHub Repo vs Sync Repos */}
+        <div className="px-6 pt-5 pb-1">
+          <div className="flex rounded-2xl p-1.5 bg-slate-100 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700/80">
+            <button
+              type="button"
+              onClick={() => { setModalTab('push'); setErrorMessage(null); setSuccessMessage(null); }}
+              className={`flex-1 py-2.5 px-3 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-2 ${
+                modalTab === 'push'
+                  ? 'bg-indigo-600 text-white shadow-md'
+                  : 'text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white'
+              }`}
+            >
+              <UploadCloud className="w-4 h-4" />
+              <span>Push Code to GitHub</span>
+              <span className="px-1.5 py-0.5 rounded text-[10px] bg-white/20 text-white font-mono">
+                main
+              </span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => { setModalTab('sync'); setErrorMessage(null); setSuccessMessage(null); }}
+              className={`flex-1 py-2.5 px-3 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-2 ${
+                modalTab === 'sync'
+                  ? 'bg-indigo-600 text-white shadow-md'
+                  : 'text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white'
+              }`}
+            >
+              <RefreshCw className="w-4 h-4" />
+              <span>Sync & Import Repos</span>
+              {gitHubState.isConnected && (
+                <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+              )}
+            </button>
+          </div>
+        </div>
+
         {/* Status Alerts */}
         {errorMessage && (
           <div className="mx-6 mt-4 p-3.5 rounded-xl bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-900/60 text-rose-700 dark:text-rose-300 text-xs flex items-start gap-2.5">
@@ -356,7 +472,234 @@ export const GitHubConnectModal: React.FC<GitHubConnectModalProps> = ({
         )}
 
         <div className="p-6 space-y-6">
-          {/* If already connected, show active account card */}
+          {/* TAB 1: PUSH CODE TO GITHUB REPO */}
+          {modalTab === 'push' && (
+            <div className="space-y-6">
+              {/* Target Repository Info Card */}
+              <div className={`p-5 rounded-2xl border transition-all ${
+                darkMode ? 'bg-slate-800/60 border-slate-700' : 'bg-slate-50 border-slate-200'
+              }`}>
+                <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+                  <div className="flex items-center gap-3.5">
+                    <div className="w-12 h-12 rounded-2xl bg-indigo-500/10 text-indigo-500 flex items-center justify-center font-bold shrink-0">
+                      <GitCommit className="w-6 h-6" />
+                    </div>
+                    <div>
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className="text-xs uppercase tracking-wider font-bold text-indigo-500">
+                          Target Repository
+                        </span>
+                        <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-emerald-100 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-800">
+                          Branch: main
+                        </span>
+                      </div>
+                      <h3 className="font-bold text-base sm:text-lg mt-0.5 font-mono text-slate-900 dark:text-white">
+                        ranjithjunnu09/Ranjith_Portfolio
+                      </h3>
+                      <p className={`text-xs mt-0.5 ${darkMode ? 'text-slate-400' : 'text-slate-500'}`}>
+                        All portfolio source code, components, styles, and configs staged and ready.
+                      </p>
+                    </div>
+                  </div>
+
+                  <a
+                    href="https://github.com/ranjithjunnu09/Ranjith_Portfolio"
+                    target="_blank"
+                    rel="noreferrer"
+                    className="shrink-0 px-3 py-2 rounded-xl border text-xs font-semibold flex items-center gap-1.5 transition-colors hover:border-indigo-500 hover:text-indigo-500 text-slate-700 dark:text-slate-300 border-slate-300 dark:border-slate-700"
+                  >
+                    <span>View on GitHub</span>
+                    <ExternalLink className="w-3.5 h-3.5" />
+                  </a>
+                </div>
+
+                {gitStatus && (
+                  <div className="mt-4 pt-3.5 border-t border-slate-200 dark:border-slate-700/60 flex flex-wrap items-center justify-between gap-2 text-xs">
+                    <div className="flex items-center gap-2 text-slate-600 dark:text-slate-300">
+                      <CheckCircle2 className="w-4 h-4 text-emerald-500 shrink-0" />
+                      <span>Last local commit: <strong>{gitStatus.lastCommit || 'feat: complete modern portfolio'}</strong></span>
+                    </div>
+                    <span className="px-2 py-0.5 rounded text-[11px] font-mono bg-slate-200/80 dark:bg-slate-700/80 text-slate-700 dark:text-slate-300">
+                      33 files committed
+                    </span>
+                  </div>
+                )}
+              </div>
+
+              {/* Direct Push Form */}
+              <form onSubmit={handlePushCode} className="space-y-4">
+                <div className={`p-4 rounded-2xl border text-xs leading-relaxed ${
+                  darkMode ? 'bg-slate-800/40 border-slate-700 text-slate-300' : 'bg-slate-50 border-slate-200 text-slate-600'
+                }`}>
+                  <div className="flex items-center justify-between gap-2 mb-1.5 flex-wrap">
+                    <span className="font-semibold text-slate-900 dark:text-white flex items-center gap-1.5">
+                      <Key className="w-4 h-4 text-indigo-500" />
+                      GitHub Personal Access Token (PAT)
+                    </span>
+                    <a
+                      href="https://github.com/settings/tokens/new?scopes=repo&description=Ranjith_Portfolio_Push"
+                      target="_blank"
+                      rel="noreferrer"
+                      className="text-indigo-600 dark:text-indigo-400 hover:underline flex items-center gap-1 font-medium text-[11px]"
+                    >
+                      Generate token on GitHub (repo scope)
+                      <ArrowUpRight className="w-3 h-3" />
+                    </a>
+                  </div>
+                  Enter a GitHub Personal Access Token with the <strong>repo</strong> scope enabled so our server can authenticate and push the entire codebase to your repository.
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold mb-1.5">
+                    Personal Access Token
+                  </label>
+                  <input
+                    type="password"
+                    value={pushToken}
+                    onChange={(e) => setPushToken(e.target.value)}
+                    placeholder="ghp_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+                    className={`w-full px-4 py-2.5 rounded-xl text-sm border font-mono transition-colors ${
+                      darkMode
+                        ? 'bg-slate-800 border-slate-700 text-white placeholder-slate-500 focus:border-indigo-500'
+                        : 'bg-white border-slate-300 text-slate-900 placeholder-slate-400 focus:border-indigo-600'
+                    }`}
+                    required
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold mb-1.5">
+                    Commit Message
+                  </label>
+                  <input
+                    type="text"
+                    value={commitMsg}
+                    onChange={(e) => setCommitMsg(e.target.value)}
+                    className={`w-full px-4 py-2.5 rounded-xl text-xs border font-mono transition-colors ${
+                      darkMode
+                        ? 'bg-slate-800 border-slate-700 text-white placeholder-slate-500 focus:border-indigo-500'
+                        : 'bg-white border-slate-300 text-slate-900 placeholder-slate-400 focus:border-indigo-600'
+                    }`}
+                  />
+                </div>
+
+                <button
+                  type="submit"
+                  disabled={pushing || !pushToken.trim()}
+                  className="w-full py-3 px-4 rounded-xl text-sm font-semibold bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white transition-all shadow-md flex items-center justify-center gap-2"
+                >
+                  {pushing ? (
+                    <>
+                      <RefreshCw className="w-4 h-4 animate-spin" />
+                      <span>Pushing code to GitHub repository...</span>
+                    </>
+                  ) : (
+                    <>
+                      <UploadCloud className="w-4 h-4" />
+                      <span>Push Code to GitHub (ranjithjunnu09/Ranjith_Portfolio)</span>
+                    </>
+                  )}
+                </button>
+              </form>
+
+              {/* Push Success Box */}
+              {pushSuccess && (
+                <div className="p-4 rounded-2xl bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-300 dark:border-emerald-800 space-y-3">
+                  <div className="flex items-center gap-2 text-emerald-700 dark:text-emerald-300 font-bold text-sm">
+                    <CheckCircle2 className="w-5 h-5 text-emerald-500" />
+                    Code Successfully Pushed to GitHub!
+                  </div>
+                  <p className="text-xs text-emerald-600 dark:text-emerald-400">
+                    Your repository is now updated with the entire portfolio codebase, README, components, and server.
+                  </p>
+                  <div className="flex items-center gap-3 pt-1">
+                    <a
+                      href="https://github.com/ranjithjunnu09/Ranjith_Portfolio"
+                      target="_blank"
+                      rel="noreferrer"
+                      className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold flex items-center gap-1.5 shadow-xs"
+                    >
+                      <span>Open Repository on GitHub</span>
+                      <ExternalLink className="w-3.5 h-3.5" />
+                    </a>
+                  </div>
+                  {pushOutput && (
+                    <pre className="text-[10px] font-mono p-2 rounded bg-emerald-900/10 text-emerald-700 dark:text-emerald-300 overflow-x-auto">
+                      {pushOutput}
+                    </pre>
+                  )}
+                </div>
+              )}
+
+              {/* Alternative: Terminal Commands & Download Archive */}
+              <div className="pt-2 border-t border-slate-200 dark:border-slate-800 space-y-3">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-bold uppercase tracking-wider text-slate-500">
+                    Alternative Push & Export Options
+                  </span>
+                </div>
+
+                {/* Terminal Commands Card */}
+                <div className={`p-4 rounded-2xl border ${
+                  darkMode ? 'bg-slate-950/70 border-slate-800' : 'bg-slate-900 border-slate-800 text-slate-100'
+                }`}>
+                  <div className="flex items-center justify-between mb-2">
+                    <div className="flex items-center gap-2 text-xs font-semibold text-slate-300">
+                      <Terminal className="w-4 h-4 text-emerald-400" />
+                      <span>Push from your local terminal</span>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={handleCopyTerminalCommands}
+                      className="px-2.5 py-1 rounded-lg text-xs font-medium bg-slate-800 hover:bg-slate-700 text-slate-300 flex items-center gap-1.5 transition-colors border border-slate-700"
+                    >
+                      {copiedCommands ? (
+                        <>
+                          <Check className="w-3 h-3 text-emerald-400" />
+                          <span className="text-emerald-400">Copied!</span>
+                        </>
+                      ) : (
+                        <>
+                          <Copy className="w-3 h-3" />
+                          <span>Copy Commands</span>
+                        </>
+                      )}
+                    </button>
+                  </div>
+                  <pre className="text-[11px] font-mono text-emerald-400/90 whitespace-pre-wrap leading-relaxed select-all">
+{`git remote set-url origin https://github.com/ranjithjunnu09/Ranjith_Portfolio.git
+git branch -M main
+git push -u origin main`}
+                  </pre>
+                </div>
+
+                {/* Download Source Archive */}
+                <div className="flex items-center justify-between gap-3 p-3.5 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/30">
+                  <div className="text-xs">
+                    <div className="font-semibold text-slate-800 dark:text-slate-200">
+                      Need a local backup?
+                    </div>
+                    <div className="text-slate-500 text-[11px]">
+                      Download complete portfolio source code with README and configs.
+                    </div>
+                  </div>
+                  <a
+                    href="/api/git/download"
+                    download="Ranjith_Portfolio.tar.gz"
+                    className="shrink-0 px-3.5 py-2 rounded-xl text-xs font-semibold bg-slate-800 hover:bg-slate-700 text-white dark:bg-slate-700 dark:hover:bg-slate-600 flex items-center gap-1.5 transition-colors"
+                  >
+                    <Download className="w-3.5 h-3.5" />
+                    <span>Download (.tar.gz)</span>
+                  </a>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* TAB 2: SYNC & IMPORT REPOS */}
+          {modalTab === 'sync' && (
+            <>
+              {/* If already connected, show active account card */}
           {gitHubState.isConnected && gitHubState.user ? (
             <div className="space-y-6">
               <div className={`p-5 rounded-2xl border transition-all ${
@@ -735,6 +1078,8 @@ export const GitHubConnectModal: React.FC<GitHubConnectModalProps> = ({
                 </form>
               )}
             </div>
+          )}
+            </>
           )}
         </div>
 

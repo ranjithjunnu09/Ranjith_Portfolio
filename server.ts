@@ -272,6 +272,21 @@ async function startServer() {
     }
   });
 
+  // 6. Download full repository archive as .tar.gz
+  app.get('/api/git/download', async (_req, res) => {
+    try {
+      const { stdout } = await execAsync('git archive HEAD | gzip', {
+        encoding: 'buffer',
+        maxBuffer: 50 * 1024 * 1024
+      });
+      res.setHeader('Content-Type', 'application/gzip');
+      res.setHeader('Content-Disposition', 'attachment; filename="Ranjith_Portfolio.tar.gz"');
+      return res.send(stdout);
+    } catch (err: any) {
+      return res.status(500).json({ error: 'Failed to generate archive: ' + err.message });
+    }
+  });
+
   // Mount Vite or static dist
   if (!isProd) {
     const vite = await createViteServer({
